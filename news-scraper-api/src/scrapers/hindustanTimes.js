@@ -42,9 +42,14 @@ export async function scrapeHT({ limit = 10, saveToDb = true } = {}) {
       const publishedAt = $container.find('span.dateTime, time').first().text().trim() || null;
 
       articles.push({
+        // normalize fields to pipeline/backend Article schema
+        headline: title,
         title,
         summary,
+        content: summary || '',
         link,
+        url: link,
+        publisher: 'Hindustan Times',
         source: 'ht',
         publishedAt: publishedAt || null,
         scrapedAt: new Date()

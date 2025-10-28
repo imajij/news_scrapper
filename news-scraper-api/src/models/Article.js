@@ -1,32 +1,45 @@
 import mongoose from 'mongoose';
 
 const articleSchema = new mongoose.Schema({
-  title: {
+  // Match Satya backend Article schema
+  headline: {
     type: String,
     required: true,
     trim: true,
-    maxlength: 500
+    maxlength: 1000
   },
-  summary: {
-    type: String,
-    trim: true,
-    maxlength: 2000
-  },
-  link: {
+  publisher: {
     type: String,
     required: true,
     trim: true
   },
-  source: {
+  content: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  url: {
     type: String,
     required: true,
     trim: true,
-    lowercase: true,
-    enum: ['toi', 'bbc', 'ht', 'guardian', 'cnn', 'ndtv', 'other']
+    unique: true
   },
-  publishedAt: {
-    type: Date,
+  factual: {
+    // 0-100 publisher baseline or computed factuality
+    type: Number,
+    min: 0,
+    max: 100,
     default: null
+  },
+  bias: {
+    type: String,
+    enum: ['left', 'right', 'neutral'],
+    default: 'neutral'
+  },
+  classification: {
+    type: String,
+    enum: ['verified', 'unverified', 'false', 'misleading'],
+    default: 'unverified'
   },
   scrapedAt: {
     type: Date,
@@ -38,35 +51,45 @@ const articleSchema = new mongoose.Schema({
   collection: 'articles'
 });
 
-// Create compound index to prevent duplicate articles (same title + source)
-articleSchema.index({ title: 1, source: 1 }, { unique: true });
-
-// Create index on link for faster lookups
-articleSchema.index({ link: 1 });
+// Indexes
+articleSchema.index({ url: 1 }, { unique: true });
+articleSchema.index({ publisher: 1 });
 
 /**
- * Static method to save article, handling duplicates gracefully
+ * Save or upsert a scraped article to match the project's Article schema.
+ * Accepts flexible input keys from scrapers and normalizes them.
  */
 articleSchema.statics.saveArticle = async function(articleData) {
   try {
-    const article = new this(articleData);
-    await article.save();
-    return { saved: true, article };
-  } catch (error) {
-    // Handle duplicate key error (code 11000)
-    if (error.code === 11000) {
-      return { saved: false, reason: 'duplicate' };
+    const doc = {
+      headline: articleData.title || articleData.headline || articleData.summary || '',
+      publisher: articleData.publisher || articleData.source || articleData.site || 'unknown',
+      content: articleData.content || articleData.summary || articleData.excerpt || '',
+      url: articleData.link || articleData.url,
+      scrapedAt: articleData.scrapedAt || new Date()
+    };
+
+    if (!doc.url || !doc.headline) {
+      return { saved: false, reason: 'invalid' };
     }
+
+    const res = await this.updateOne({ url: doc.url }, { $setOnInsert: doc }, { upsert: true });
+    if (res.upsertedCount && res.upsertedCount > 0) {
+      return { saved: true, article: doc };
+    }
+    // existing
+    return { saved: false, reason: 'duplicate' };
+  } catch (error) {
+    if (error.code === 11000) return { saved: false, reason: 'duplicate' };
     throw error;
   }
 };
 
 /**
- * Static method to get recent articles
+ * Get recent articles
  */
-articleSchema.statics.getRecent = async function(limit = 20, source = null) {
-  const query = source ? { source } : {};
-  return this.find(query)
+articleSchema.statics.getRecent = async function(limit = 20) {
+  return this.find({})
     .sort({ scrapedAt: -1 })
     .limit(limit)
     .select('-__v')

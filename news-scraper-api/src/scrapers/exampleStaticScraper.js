@@ -27,9 +27,13 @@ export async function scrapeBBC({ limit = 10 } = {}) {
     // Summary is often in sibling or parent; we keep it minimal
     const summary = $el.closest('.gs-c-promo').find('.gs-c-promo-summary').first().text().trim() || null;
     articles.push({
+      headline: title,
       title,
       summary,
+      content: summary || '',
+      url: link,
       link,
+      publisher: 'BBC',
       source: 'bbc',
       publishedAt: null
     });
@@ -58,9 +62,13 @@ export async function scrapeHT({ limit = 10 } = {}) {
     const publishedAt = $el.find('span.dateTime').first().text().trim() || null;
 
     articles.push({
+      headline: title,
       title,
       summary,
+      content: summary || '',
+      url: link,
       link,
+      publisher: 'Hindustan Times',
       source: 'ht',
       publishedAt: publishedAt || null
     });

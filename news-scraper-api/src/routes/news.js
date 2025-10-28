@@ -68,17 +68,28 @@ router.get('/', async (req, res, next) => {
       }
     }
 
+    // Persist scraped articles using Article.saveArticle which now upserts into the unified articles collection
+    let savedCount = 0;
+    for (const a of allArticles) {
+      try {
+        const r = await Article.saveArticle(a);
+        if (r.saved) savedCount++;
+      } catch (e) {
+        console.warn('[api:news] failed to save article', e?.message || e);
+      }
+    }
+
     res.status(errors.length > 0 && allArticles.length === 0 ? 500 : 200).json({
       status: errors.length > 0 && allArticles.length === 0 ? 'error' : 'success',
       total: allArticles.length,
+      saved: savedCount,
       sources: sources,
       message: `Scraped ${allArticles.length} articles from ${sources.join(', ')}`,
       errors: errors.length > 0 ? errors : undefined,
       data: allArticles.map(article => ({
-        title: article.title,
-        summary: article.summary,
-        link: article.link,
-        source: article.source,
+        headline: article.headline || article.title,
+        publisher: article.publisher || article.source,
+        url: article.url || article.link,
         publishedAt: article.publishedAt,
         scrapedAt: article.scrapedAt
       }))
@@ -118,32 +129,29 @@ router.get('/stored', async (req, res, next) => {
     if (isNaN(limit) || limit <= 0) limit = 20;
     if (limit > 100) limit = 100;
 
-    const source = req.query.source?.toLowerCase() || null;
+    const publisher = req.query.publisher || null;
 
-    // Validate source if provided
-    if (source && !availableSources.includes(source) && source !== 'all') {
-      return res.status(400).json({
-        status: 'error',
-        message: `Invalid source: ${source}`,
-        availableSources: availableSources
-      });
-    }
+    console.log(`[api:news] fetching stored articles, limit=${limit}, publisher=${publisher || 'all'}`);
 
-    console.log(`[api:news] fetching stored articles, limit=${limit}, source=${source || 'all'}`);
+    // Build query
+    const q = {};
+    if (publisher) q.publisher = publisher;
 
-    const articles = await Article.getRecent(limit, source);
+    const articles = await Article.find(q).sort({ scrapedAt: -1 }).limit(limit).lean();
 
     res.status(200).json({
       status: 'success',
       total: articles.length,
-      source: source || 'all',
+      publisher: publisher || 'all',
       message: 'Articles retrieved from database',
       data: articles.map(article => ({
         id: article._id,
-        title: article.title,
-        summary: article.summary,
-        link: article.link,
-        source: article.source,
+        headline: article.headline,
+        publisher: article.publisher,
+        url: article.url,
+        factual: article.factual,
+        bias: article.bias,
+        classification: article.classification,
         publishedAt: article.publishedAt,
         scrapedAt: article.scrapedAt,
         createdAt: article.createdAt
