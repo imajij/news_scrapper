@@ -3,6 +3,7 @@ import { scrapeTOI } from '../scrapers/timesOfIndia.js';
 import { scrapeBBC } from '../scrapers/bbc.js';
 import { scrapeHT } from '../scrapers/hindustanTimes.js';
 import { scrapeGuardian } from '../scrapers/theGuardian.js';
+import { scrapeGenericArticle } from '../scrapers/genericScraper.js';
 import Article from '../models/Article.js';
 
 const router = Router();
@@ -163,6 +164,71 @@ router.get('/stored', async (req, res, next) => {
     next({
       status: 500,
       message: `Failed to fetch stored articles: ${error.message}`
+    });
+  }
+});
+
+/**
+ * POST /api/news/scrape-url
+ * Scrape a single article from a given URL
+ * Body: { url: string, saveToDb?: boolean }
+ */
+router.post('/scrape-url', async (req, res, next) => {
+  try {
+    const { url, saveToDb = false } = req.body;
+
+    if (!url) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'URL is required'
+      });
+    }
+
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch (e) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid URL format'
+      });
+    }
+
+    console.log(`[api:news] scraping single URL: ${url}`);
+
+    // Scrape the article using generic scraper
+    const article = await scrapeGenericArticle(url);
+
+    // Optionally save to database
+    let saved = false;
+    if (saveToDb) {
+      try {
+        const result = await Article.saveArticle(article);
+        saved = result.saved;
+      } catch (e) {
+        console.warn('[api:news] failed to save article:', e?.message || e);
+      }
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Article scraped successfully',
+      saved: saved,
+      data: {
+        headline: article.headline,
+        publisher: article.publisher,
+        content: article.content,
+        url: article.url,
+        publishedAt: article.publishedAt,
+        scrapedAt: article.scrapedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('[api:news] error scraping URL:', error.message);
+    next({
+      status: 500,
+      message: `Failed to scrape URL: ${error.message}`
     });
   }
 });
